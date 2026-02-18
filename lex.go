@@ -505,15 +505,48 @@ func (b *buffer) readDict() object {
 		return x
 	}
 
-	switch b.readByte() {
+	ch := b.readByte()
+
+	switch ch {
 	case '\r':
 		if b.readByte() != '\n' {
 			b.unreadByte()
 		}
 	case '\n':
-		// ok
+	// ok
+
+	case ' ', '\t', '\f', 0x00:
+
+		ws := []byte{ch}
+		for {
+			c := b.readByte()
+			if c == ' ' || c == '\t' || c == '\f' || c == 0x00 {
+				ws = append(ws, c)
+				continue
+			}
+
+			if c == '\r' {
+				// We had WS then CR (optionally LF) -> treat as EOL and discard WS
+				if b.readByte() != '\n' {
+					b.unreadByte()
+				}
+				break
+			} else if c == '\n' {
+				// We had WS then LF -> treat as EOL and discard WS
+				break
+			} else {
+				// Not an EOL after WS: push back the non-WS byte and the WS we consumed.
+				b.unreadByte() // push back 'c'
+				for i := len(ws) - 1; i >= 0; i-- {
+					b.unreadByte()
+				}
+				break
+			}
+		}
+
 	default:
-		b.errorf("stream keyword not followed by newline")
+		b.unreadByte()
+		// b.errorf("stream keyword not followed by newline")
 	}
 
 	return stream{x, b.objptr, b.readOffset()}
